@@ -89,7 +89,7 @@ paths:
       - "States"
       operationId: deleteStates
       summary: "Delete states"
-      description: 
+      description: |
         This endpoint is given a list of state IDs, which the store must then use to delete (or mark as deleted) the matching state in the backing store.
 
         If required (e.g. for compliance), the actual states can stay in the backing store as long as is needed, but subsequent requests to load the states *MUST NOT* return the state if it has previously been marked for deletion.

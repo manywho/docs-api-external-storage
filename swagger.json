@@ -105,7 +105,7 @@
         ],
         "operationId": "deleteStates",
         "summary": "Delete states",
-        "description": "This endpoint is given a list of state IDs, which the store must then use to delete (or mark as deleted) the matching state in the backing store.\nIf required (e.g. for compliance), the actual states can stay in the backing store as long as is needed, but subsequent requests to load the states *MUST NOT* return the state if it has previously been marked for deletion.\nIf a state couldn't be deleted successfully, a descriptive error must be returned, and that error response *MUST* adhere to the `ServiceProblem` object defined in this document. The error will be logged by the Boomi Flow platform, and displayed to the appropriate members of the tenant in order to take action, if required.",
+        "description": "This endpoint is given a list of state IDs, which the store must then use to delete (or mark as deleted) the matching state in the backing store.\n\nIf required (e.g. for compliance), the actual states can stay in the backing store as long as is needed, but subsequent requests to load the states *MUST NOT* return the state if it has previously been marked for deletion.\n\nIf a state couldn't be deleted successfully, a descriptive error must be returned, and that error response *MUST* adhere to the `ServiceProblem` object defined in this document. The error will be logged by the Boomi Flow platform, and displayed to the appropriate members of the tenant in order to take action, if required.\n",
         "produces": [
           "application/json"
         ],
