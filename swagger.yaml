@@ -1,0 +1,194 @@
+swagger: "2.0"
+info:
+  description: |
+    The External Storage API defines a set of endpoints that are used to store data to be used by the Boomi Flow platform.
+
+    For all endpoints that expect a request body, each individual item in the body is signed and encrypted using a set of keys that are generated at store creation in the platform, and for endpoints that return a response, each item in the response body must also be signed and encrypted. It's the responsibility of the store itself to verify and decrypt incoming data, and that outgoing data is appropriately signed and encrypted (which the Boomi Flow platform will verify).
+  version: "1"
+  title: "External Storage API"
+  contact:
+    email: support@manywho.com
+schemes:
+- "https"
+tags:
+- name: "States"
+  description: Perform storage actions on states
+parameters:
+  headerXManyWhoPlatformKeyID:
+    name: "X-ManyWho-Platform-Key-ID"
+    description: |
+      This header will contain the ID of the platform key that your store must use to verify the integrity of incoming request bodies, and to encrypt outgoing response bodies. For requests with a body, the ID in the header will always match the key ID in the incoming objects, so if your JWT/JWS/JWE library supports resolving the correct key from a given token automatically, that alone would suffice for incoming requests with a body.
+    type: string
+    in: header
+    required: true
+  headerXManyWhoReceiverKeyID:
+    name: "X-ManyWho-Receiver-Key-ID"
+    description: |
+      This header will contain the ID of the receiver key that your store must use to decrypt incoming request bodies, and to sign outgoing response bodies. As with `X-ManyWho-Platform-Key-ID`, for requests with a body, the ID in the header will always match the key ID in the incoming objects, so if your JWT/JWS/JWE library supports resolving the correct key from a given token automatically, that alone would suffice for incoming requests with a body.
+    type: string
+    in: header
+    required: true
+  headerXManyWhoSignature:
+    name: "X-ManyWho-Signature"
+    description: |
+      This header contains a signed set of claims that your store can optionally use to undeniably verify that the incoming request was sent from the Boomi Flow platform. It consists of a JWT, signed by the platform key in the `X-ManyWho-Platform-Key-ID`, with the following claims:
+
+      * `aud`: the current tenant ID
+      * `iss`: the string "manywho"
+      * `sub`: the current tenant ID
+      * `path`: the current URL path
+
+      The JWT itself is only valid for 5 minutes from the creation date, and the claims should be matched against the appropriate matching properties in the incoming request to validate the signature's contents.
+    type: string
+    in: header
+    required: true
+paths:
+  /states/{tenant}:
+    parameters:
+      - $ref: '#/parameters/headerXManyWhoPlatformKeyID'
+      - $ref: '#/parameters/headerXManyWhoReceiverKeyID'
+      - $ref: '#/parameters/headerXManyWhoSignature'
+    post:
+      tags:
+      - "States"
+      operationId: saveStates
+      summary: "Save states"
+      description: |
+        This endpoint is given a list of signed and encrypted states objects, and is expected to decrypt, verify and then save each state. Each state object in the request is a JWT, signed by a platform key, and encrypted with a receiver key, so any compliant JWT/JWS/JWE library should be able to decode it successfully.
+
+        Saving the state should perform an "upsert", where if a given state object already exists in the backing store, it must be updated *ONLY* if the incoming state is newer than the stored one, as it's possible that the Boomi Flow platform processes multiple updates to a state and messages are received by the store out-of-order.
+
+        If a state couldn't be saved successfully, a descriptive error must be returned, and that error response *MUST* adhere to the `ServiceProblem` object defined in this document. The error will be logged by the Boomi Flow platform, and displayed to the appropriate members of the tenant in order to take action, if required.
+      consumes:
+      - "application/json"
+      produces:
+      - "application/json"
+      parameters:
+      - name: tenant
+        in: path
+        required: true
+        type: string
+        format: uuid
+      - in: "body"
+        name: "body"
+        description: "A list of encrypted and signed state objects that need to be saved"
+        required: true
+        schema:
+          type: array
+          items:
+            $ref: "#/definitions/StateRequest"
+      responses:
+        204:
+          description: "All states saved successfully"
+        default:
+          description: "Unexpected error"
+          schema:
+            $ref: "#/definitions/ServiceProblem"
+    delete:
+      tags:
+      - "States"
+      operationId: deleteStates
+      summary: "Delete states"
+      description: 
+        This endpoint is given a list of state IDs, which the store must then use to delete (or mark as deleted) the matching state in the backing store.
+
+        If required (e.g. for compliance), the actual states can stay in the backing store as long as is needed, but subsequent requests to load the states *MUST NOT* return the state if it has previously been marked for deletion.
+
+        If a state couldn't be deleted successfully, a descriptive error must be returned, and that error response *MUST* adhere to the `ServiceProblem` object defined in this document. The error will be logged by the Boomi Flow platform, and displayed to the appropriate members of the tenant in order to take action, if required.
+      produces:
+      - "application/json"
+      parameters:
+      - name: tenant
+        in: path
+        required: true
+        type: string
+        format: uuid
+      - in: "body"
+        name: "body"
+        description: "IDs of the states to be deleted"
+        required: true
+        schema:
+          type: array
+          items:
+            type: string
+            format: uuid
+      responses:
+        204:
+          description: "All states deleted successfully"
+        default:
+          description: "Unexpected error"
+          schema:
+            $ref: "#/definitions/ServiceProblem"
+  /states/{tenant}/{id}:
+    parameters:
+      - $ref: '#/parameters/headerXManyWhoPlatformKeyID'
+      - $ref: '#/parameters/headerXManyWhoReceiverKeyID'
+      - $ref: '#/parameters/headerXManyWhoSignature'
+    get:
+      tags:
+      - "States"
+      operationId: findState
+      summary: "Find state by ID"
+      description: |
+        This endpoint is given a single state ID in the path, and the store must use that (combined with the tenant ID) to load a state object's latest content, wrap it in a signed and encrypted JWT, then return that token.
+
+        The JWT must contain the following claims:
+
+        * `aud`: the string "manywho"
+        * `iss`: the current tenant ID
+        * `sub`: the current state ID
+        * `content`: the state's `content` field, which *MUST* be unmodified from the one sent to the store originally
+
+        Once the JWT is created, it *MUST* be signed using the expected receiver private key, which can be determined from the ID given in the `X-ManyWho-Receiver-Key-ID` header. After signing, it *MUST* be encrypted using the expected platform public key, which can be determined from the ID given in the `X-ManyWho-Platform-Key-ID` header.
+
+        If a state couldn't be found or something went wrong, a descriptive error must be returned, and that error response *MUST* adhere to the `ServiceProblem` object defined in this document. The error will be logged by the Boomi Flow platform, and displayed to the appropriate members of the tenant in order to take action, if required.
+      produces:
+      - "application/json"
+      parameters:
+      - name: tenant
+        in: path
+        description: "ID of the tenant the state belongs to"
+        required: true
+        type: string
+        format: uuid
+      - name: id
+        in: path
+        description: "ID of the state to find"
+        required: true
+        type: string
+        format: uuid
+      responses:
+        200:
+          description: "Successful operation"
+          schema:
+            $ref: '#/definitions/StateResponse'
+        404:
+          description: "State not found"
+        default:
+          description: "Unexpected error"
+          schema:
+            $ref: "#/definitions/ServiceProblem"
+definitions:
+  ServiceProblem:
+    type: object
+    properties:
+      kind:
+        type: string
+        enum:
+          - service
+      uri:
+        type: string
+      statusCode:
+        type: integer
+      message:
+        type: string
+  StateResponse:
+    type: object
+    properties:
+      token:
+        type: string
+  StateRequest:
+      type: object
+      properties:
+        token:
+          type: string
